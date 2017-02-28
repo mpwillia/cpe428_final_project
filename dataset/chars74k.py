@@ -6,6 +6,7 @@ from collections import defaultdict
 import string
 import os
 from glob import glob
+from dataset.ocr_dataset import OCRDataset
 
 dataset_path = os.path.join(dataset.dataset_files_path, 'chars74k')
 valid_dataset_types = ('Fnt','Hnd','Img')
@@ -19,15 +20,6 @@ def load_english(dataset_type = 'Hnd'):
     if dataset_type not in valid_dataset_types:
         raise ValueError("Invalid dataset type! Expected: {}".format(valid_dataset_types))
     
-    # get the list file
-    list_name = "list_English_{}.m".format(dataset_type)
-    dataset_list_path = os.path.join(dataset_path, 'Lists', list_name)
-    
-    if not os.path.exists(dataset_list_path):
-        raise OSError("No list file found at '{}'".format(dataset_list_path))
-    
-    print("Dataset List Path : {}".format(dataset_list_path))
-
     # get the images directory 
     dataset_images_path = os.path.join(dataset_path, 'English', dataset_type, 'Img')
     if not os.path.exists(dataset_images_path):
@@ -45,9 +37,9 @@ def load_english(dataset_type = 'Hnd'):
     
     images_map = gather_image_paths(dataset_images_path)
     
-    for label in range(1, 63):
-        image_paths = images_map[label]
-        print("{:3d} has {:5d} images".format(label, len(image_paths)))
+    images_char_map = {label_map[label] : paths for label, paths in images_map.items()}
+    
+    return OCRDataset(images_char_map)
 
 
 def get_chars74k_label_map():
