@@ -20,9 +20,6 @@ def segment_letters(image):
     img_chunks = crop_col_chunks(cropped_img, col_chunks)
     img_chunks = [make_image_square(img) for img in img_chunks]
 
-    for img_chunk in img_chunks:
-        imshow(img_chunk)
-    
     return img_chunks
 
 
@@ -38,7 +35,8 @@ def make_image_square(image):
     pad_hl = int(pad_h / 2.0)
     pad_hr = pad_h - pad_hl
 
-    return np.pad(image, ((pad_hl, pad_hr), (pad_wl, pad_wr)), 'constant', constant_values = 1.0) 
+    #return np.pad(image, ((pad_hl, pad_hr), (pad_wl, pad_wr)), 'constant', constant_values = 1.0) 
+    return np.pad(image, ((pad_hl, pad_hr), (pad_wl, pad_wr)), 'edge') 
     
 def crop_col_chunks(image, col_chunks):
     img_chunks = []
@@ -74,7 +72,8 @@ def find_col_chunks(image, gap_tolerance = 5, chunk_padding = 5):
             
         prev_idx = idx
     
-    add_chunk(chunk_start, prev_idx)
+    if len(chunks) > 0:
+        add_chunk(chunk_start, prev_idx)
 
     return chunks
 
@@ -83,6 +82,7 @@ def normalize_image_values(image):
     min_val = min(image.flatten())
     val_range = max_val - min_val
     
+    if val_range == 0.0: return image
     if val_range == 1.0: return image
     return (image - min_val) / val_range
 
