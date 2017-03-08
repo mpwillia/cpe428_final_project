@@ -2,14 +2,46 @@
 import math
 import numpy as np
 from skimage import data
+from skimage import color
 from skimage import transform as tf
+from skimage import util
 from multiprocessing import Pool
 import traceback
 from functools import partial
 
+def to_grayscale(img):
+   return color.rgb2gray(img)
+
+
+def noise_images(images, noise_type, processes = 8, **kwargs):
+   proc_pool = Pool(processes = processes)
+   
+   func_partial = partial(_noise_image, noise_type = noise_type, **kwargs)
+
+   if processes <= 1:   
+      images = [func_partial(img) for img in images]
+   else: 
+      images = safe_dispatch(proc_pool, func_partial, images)
+
+   proc_pool.close()
+   proc_pool.join()
+   return images
+
+def _noise_image(image, noise_type, **kwargs):
+   return util.random_noise(image, mode = noise_type, **kwargs)
+
+
+
+
 def shear_images(images, deg_angle, processes = 8):
    proc_pool = Pool(processes = processes)
-   affine = tf.AffineTransform(shear = math.radians(deg_angle), translation = (-18,4))
+   
+   if deg_angle < 0:
+      trans = (-10,5)
+   else:
+      trans = (10,5)
+
+   affine = tf.AffineTransform(shear = math.radians(deg_angle), translation = trans)
    func_partial = partial(_warp_image, affine = affine, mode = 'edge')
    if processes <= 1:   
       images = [func_partial(img) for img in images]
