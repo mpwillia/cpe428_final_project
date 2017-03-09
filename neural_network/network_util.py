@@ -5,6 +5,8 @@ import math
 import tensorflow as tf
 import sys
 
+from . import image_util
+
 def print_fit_results(fit_results, fmt = '.5f', msg = None):
     
     if msg is not None: print(msg)
@@ -64,11 +66,15 @@ def get_num_batches(dataset_size, batch_size):
         return int(math.ceil(dataset_size / float(batch_size)))
 
 
-def batch_dataset(dataset, batch_size, include_progress = False):
+def batch_dataset(dataset, batch_size, include_progress = False, expansions = None):
     if batch_size is None: 
         yield dataset
     else:
         x, y = dataset 
+        
+        if expansions is not None:
+            x = image_util.apply_random_expansion(x)
+
         total_batches = get_num_batches(len(x), batch_size) 
         for batch_num in range(total_batches):
             batch_idx = batch_num * batch_size
@@ -79,6 +85,10 @@ def batch_dataset(dataset, batch_size, include_progress = False):
                 yield batch_x, batch_y, batch_num, total_batches
             else:
                 yield batch_x, batch_y
+
+
+
+
 
 
 # Per Class Filtering ---------------------------------------------------------

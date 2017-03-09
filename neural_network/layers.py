@@ -10,6 +10,28 @@ See the following for layer info
 https://www.tensorflow.org/api_docs/python/contrib.layers/higher_level_ops_for_building_neural_network_layers_
 """
 
+class Layer(object):
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    def __call__(self, *args, **kwargs):
+        newkwargs = self.kwargs.copy()
+        newkwargs.update(kwargs)
+        return self.func(*(self.args + args), **newkwargs)
+    
+    def __getstate__(self):
+        odict = self.__dict__.copy()
+        del odict['func']
+        odict['func_name'] = self.func.__name__
+        return odict
+    
+    def __setstate__(self, state):
+        self.args = state['args']
+        self.kwargs = state['kwargs']
+        self.func = getattr(sys.modules[__name__], state['func_name'])
+
 def _wrap_layer(layer_func, **layer_kwargs):
     layer_kwargs.pop('inputs', None)
     
@@ -17,6 +39,7 @@ def _wrap_layer(layer_func, **layer_kwargs):
         layer_kwargs.pop('reuse', None)
 
     return partial(layer_func, **layer_kwargs) 
+    #return Layer(layer_func, **layer_kwargs) 
 
 def _handle_kwargs(given, default):
     merged = {k:v for k,v in default.items()} 
@@ -83,7 +106,10 @@ _layer_funcs = [tfcl.avg_pool2d,
                 ]
 
 def _register_layer_func(layer_func):
-    return partial(_wrap_layer, layer_func)
+    def layer_func_wrapper(**kwargs):
+        return _wrap_layer(layer_func, **kwargs)
+    return layer_func_wrapper
+    #return partial(_wrap_layer, layer_func)
 
 for _layer_func in _layer_funcs:
     if _layer_func.__name__ not in sys.modules[__name__].__dict__:

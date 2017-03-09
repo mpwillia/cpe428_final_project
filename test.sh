@@ -1,1 +1,1 @@
-python2.7 final_project.py
+python3 final_project.py

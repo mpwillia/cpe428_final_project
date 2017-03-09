@@ -11,6 +11,7 @@ import sys
 import math
 import random
 import os
+from functools import partial 
 
 from .network_util import match_tensor_shape, batch_dataset, get_num_batches, \
     make_per_class_eval_tensor, print_eval_results, print_fit_results
@@ -20,6 +21,9 @@ from .summary import NetworkSummary
 from collections import namedtuple
 EvalResults = namedtuple('EvalResults', ['overall', 'per_class'])
 FitResults = namedtuple('FitResults', ['train', 'validation', 'test'])
+
+
+
 
 class Network(object):
     def __init__(self, input_shape, layers, logdir = None, network_name = 'network'):
@@ -32,6 +36,13 @@ class Network(object):
         self.layers = layers
         
         self.network_name = network_name
+        self.input_shape = input_shape
+
+        self.sess = None
+        self.saver = None
+        self.train_step = None
+        #self.global_step = None
+        self.global_step = tf.Variable(0, trainable = False, name = "net_global_step")
 
         self.logdir = logdir
         self.network_summary = NetworkSummary(logdir, max_queue = 3, flush_secs = 60)
@@ -74,23 +85,115 @@ class Network(object):
         self.eval_net_output = tf.placeholder(tf.float32, self.net_output.get_shape(),
                                               name = "eval_net_output")
 
-        self.sess = None
-        self.saver = None
-        self.train_step = None
-        self.global_step = None
+    def __getstate__(self):
+        odict = self.__dict__.copy()
         
+        from pprint import pprint 
+
+        def unwrap_layer(wrapped_layer):
+            print("Layer to Unwrap") 
+            pprint(wrapped_layer)
+
+            return (wrapped_layer.func, wrapped_layer.args, wrapped_layer.kwargs)
+
+        #print("Current Dict State")
+        #pprint(odict)
+        
+        # Reset Session and Savor Object
+        #odict['sess'] = None
+        #odict['saver'] = None
+
+        # Strip Tensorflow Content
+        del odict['sess']
+        del odict['saver']
+        del odict['global_step']
+        del odict['train_step']
+        del odict['network_summary']
+        del odict['exp_output']
+        del odict['eval_net_output']
+        del odict['net_input']
+        del odict['net_output']
+        del odict['net_input_shape']
+
+
+        #print("Test")
+        #pprint(self.layers[0].__getstate__())
+
+
+        #print("\n\nFinal Dict State")
+        
+        # Unwrap Layer Functions
+        #unwrapped_layers = [unwrap_layer(layer) for layer in self.layers]
+        #odict['layers'] = unwrapped_layers
+        
+        
+
+
+        #pprint(odict)
+
+        return odict
+
+    def __setstate__(self, state):
+        from pprint import pprint 
+
+        #unwrapped_layers = state['layers']
+        #wrapped_layers = [partial(func, *args, **kwargs) for func, args, kwargs in unwrapped_layers]
+        #state['layers'] = wrapped_layers
+
+        self.__init__(**state)
+
+
+
+
+    def save_variables(self, path):
+        if self.saver is None or self.sess is None:
+            raise Exception("Cannot save variables without a session and saver")
+        self.saver.save(self.sess, path)
+
+
+    def load_variables(self, path):
+        self.init_session()  
+        self.saver.restore(self.sess, path)
+
+    def init_session(self):
+        # initilize our session and our graph variables
+        if self.sess is None:
+            sess_config = tf.ConfigProto(
+                                         log_device_placement = False,
+                                         allow_soft_placement = False)
+            
+            self.saver = tf.train.Saver()
+            self.sess = tf.Session(config = sess_config)
+            self.sess.run(tf.global_variables_initializer())
+        else: 
+            list_of_variables = tf.global_variables()
+            uninitialized_variables = list(tf.get_variable(name) for name in
+                                       self.sess.run(tf.report_uninitialized_variables(list_of_variables)))
+            self.sess.run(tf.initialize_variables(uninitialized_variables))
+
+
+    def close(self):
+        if self.sess is not None:
+            self.sess.close()
+            self.sess = None
+
+    def get_global_step(self):
+        if self.sess is not None:
+            return self.sess.run(self.global_step)
+
     def fit(self, train_data, optimizer, loss,
             epochs, mb_size = None,
             evaluation_freq = None, evaluation_func = None, evaluation_fmt = None,
+            evaluation_target = None, max_step = None,
             per_class_evaluation = False,
             validation_data = None, 
             test_data = None,
-            gpu_mem_fraction = None,
             shuffle_freq = None,
             l1_reg_strength = 0.0,
             l2_reg_strength = 0.0,
             summaries_per_epoch = None,
             save_checkpoints = False, checkpoint_freq = None,
+            expansion = None,
             verbose = False):
         """
         For |optimizer| see:
@@ -101,7 +204,8 @@ class Network(object):
             https://www.tensorflow.org/api_docs/python/nn/classification
 
         """
-        
+    
+
         # reshape given data
         train_data = self._reshape_dataset(train_data)
         validation_data = self._reshape_dataset(validation_data)
@@ -142,9 +246,6 @@ class Network(object):
 
         self.network_summary.add_variable_summary()
 
-        # setup train steps
-        if self.global_step is None:
-            self.global_step = tf.Variable(0, trainable = False, name = "net_global_step")
     
         try:
             opt_name = optimizer.__class__.__name__
@@ -187,30 +288,19 @@ class Network(object):
 
         if evaluation_fmt is None: evaluation_fmt = ".5f"
 
-        # initilize our session and our graph variables
-        if self.sess is None:
-            gpu_options = None
-            if gpu_mem_fraction is not None:
-                gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = gpu_mem_fraction)
-            sess_config = tf.ConfigProto(gpu_options = gpu_options, 
-                                         log_device_placement = False,
-                                         allow_soft_placement = False)
-            
-            self.saver = tf.train.Saver()
-            self.sess = tf.Session(config = sess_config)
-            self.sess.run(tf.global_variables_initializer())
+        self.init_session()
         
         self.network_summary.add_graph(self.sess.graph)
         
         epoch_eval_results = []
         
-        initial_step = self.sess.run(self.global_step)
+        initial_step = self.get_global_step()
         for epoch in range(epochs):
             
             epoch_msg = "Training Epoch {:4d} / {:4d}".format(epoch, epochs)
             self._run_training_epoch(train_data, mb_size, 
                                      summaries_per_epoch = summaries_per_epoch,
-                                     verbose = True, verbose_prefix = epoch_msg)
+                                     verbose = True, verbose_prefix = epoch_msg, expansions = expansion)
             
             # check for mid-train evaluations
             if evaluation_freq is not None and epoch % evaluation_freq == 0: 
@@ -225,10 +315,28 @@ class Network(object):
                 else:
                     validation_eval = None
 
+                
+                if evaluation_target:
+                    if validation_eval is not None:
+                        met_target = validation_eval.overall >= evaluation_target
+                    else:
+                        met_target = train_eval.overall >= evaluation_target
+                else:
+                    met_target = None
+
                 epoch_fit_results = FitResults(train = train_eval, validation = validation_eval, test = None)
                 epoch_eval_results.append(epoch_fit_results)
                 
                 if verbose > 1: print_fit_results(epoch_fit_results, evaluation_fmt)
+
+                if met_target is not None and met_target:
+                    print("\n\nReached Evaluation Target of {}".format(evaluation_target))
+                    break
+            
+            if max_step is not None and self.get_global_step() >= max_step:
+                print("\n\nReached Max Step Target of {}".format(max_step))
+                break
+
             if verbose > 1: print("")
             
             if save_checkpoints and checkpoint_freq is not None and epoch % checkpoint_freq == 0:
@@ -239,7 +347,8 @@ class Network(object):
                 train_data = self._shuffle_dataset(train_data)
             
             self.network_summary.flush()
-        final_step = self.sess.run(self.global_step)
+        
+        final_step = self.get_global_step()
         total_steps = final_step - initial_step 
         if verbose > 0:
             print("\nTrained for {:d} Steps".format(total_steps))
@@ -291,7 +400,7 @@ class Network(object):
 
     def _run_training_epoch(self, train_data, mb_size = None, feed_dict_kwargs = dict(),
                             summaries_per_epoch = None,
-                            verbose = False, verbose_prefix = None):
+                            verbose = False, verbose_prefix = None, expansions = None):
         train_x, train_y = train_data
        
         mb_total = get_num_batches(len(train_x), mb_size)
@@ -306,7 +415,7 @@ class Network(object):
             summary_every = int(math.ceil(mb_total / float(summaries_per_epoch)))
 
         with self.sess.as_default():
-            for mb_x, mb_y, mb_num, mb_total in self._batch_for_train(train_data, mb_size, True):
+            for mb_x, mb_y, mb_num, mb_total in self._batch_for_train(train_data, mb_size, True, expansions):
 
                 if verbose:
                     prefix = ''
@@ -332,7 +441,7 @@ class Network(object):
                 self._process_run_results(run_results)
 
     def _evaluate(self, dataset, eval_tensor, per_class_eval_tensor = None, 
-                  chunk_size = 100, name = 'eval'):
+                  chunk_size = 2000, name = 'eval'):
 
         eval_x, eval_y = dataset
 
@@ -358,9 +467,27 @@ class Network(object):
             eval_results = self.sess.run(fetches, feed_dict = feed_dict)
             return self._process_eval_results(eval_results, non_summary_size)
     
+    def predict(self, data, chunk_size = 500, label_map = None):
+        
+        fake_labels = [None]*len(data)
+        
+        data = (data, fake_labels)
+
+        with self.sess.as_default():
+            results = [] 
+            for chunk_x, chunk_y, in self._batch_for_eval(data, chunk_size):
+                results.extend(self.net_output.eval(feed_dict={self.net_input : chunk_x}))
+
+            results = np.argmax(results, 1)
+            
+            if label_map is not None:
+                results = [label_map[r] for r in results]
+            
+            return results
+
     # split these just for the sake of subclassing
-    def _batch_for_train(self, dataset, batch_size, include_progress = False):
-        return batch_dataset(dataset, batch_size, include_progress)
+    def _batch_for_train(self, dataset, batch_size, include_progress = False, expansions = None):
+        return batch_dataset(dataset, batch_size, include_progress, expansions)
     
     def _batch_for_eval(self, dataset, batch_size, include_progress = False):
         return batch_dataset(dataset, batch_size, include_progress)

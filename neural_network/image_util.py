@@ -8,12 +8,83 @@ from skimage import util
 from multiprocessing import Pool
 import traceback
 from functools import partial
+import random
 
 def to_grayscale(img):
    return color.rgb2gray(img)
 
 
+def apply_random_expansion(images, processes = 8, **kwargs):
+   print("\nApplying Random Expansion to Dataset")
+   proc_pool = Pool(processes = processes)
+   
+   #print(images.shape)
+   #images = np.squeeze(images, axis = 3)
 
+   func_partial = partial(_apply_random_expansion, **kwargs)
+
+   if processes <= 1:   
+      images = [func_partial(img) for img in images]
+   else: 
+      images = safe_dispatch(proc_pool, func_partial, images)
+
+   proc_pool.close()
+   proc_pool.join()
+   
+   #images = np.expand_dims(images, axis = 3)
+   return images
+
+
+
+def _apply_random_expansion(image, rot_prob = 0.2, rot_range = (-30,30),
+                                   shear_prob = 0.2, shear_range = (-30,30),
+                                   trans_prob = 0.2, trans_range = ((-10,10),(-10,10)),
+                                   zoom_prob = 0.2, zoom_range = (0, 15),
+                                   noise_prob = 0.1):
+   
+   ops = []
+   
+   # Rotation
+   if random.random() < rot_prob:
+      ops.append(partial(_rotate_image, angle = random.randint(*rot_range)))
+   
+   # Shearing
+   if random.random() < shear_prob:
+      ops.append(partial(_shear_image, shear = random.randint(*shear_range)))
+
+   # Translation
+   if random.random() < trans_prob:
+      ops.append(partial(_translate_image, trans = (random.randint(*trans_range[0]), random.randint(*trans_range[1]))))
+   
+   # Zooming
+   if random.random() < zoom_prob:
+      ops.append(partial(_zoom_image, zoom_amt = random.randint(*zoom_range)))
+
+   # Noise
+   if random.random() < noise_prob:
+      ops.append(partial(_noise_image, noise_type = 'speckle'))
+
+   if len(ops) <= 0:
+      return image
+   else:
+      random.shuffle(ops)
+   
+   try:
+      for op in ops:
+         image = op(image)
+   except:
+      print(image.shape)
+      raise
+   
+   return image
+
+def _shear_image(image, shear, mode = 'edge'):
+   affine = tf.AffineTransform(shear = math.radians(shear))
+   return tf.warp(image, affine, mode = mode)
+
+def _translate_image(image, trans, mode = 'edge'):
+   affine = tf.AffineTransform(translation = trans)
+   return tf.warp(image, affine, mode = mode)
 
 def zoom_images(images, zoom_amt, processes = 8):
    proc_pool = Pool(processes = processes)
@@ -31,7 +102,11 @@ def zoom_images(images, zoom_amt, processes = 8):
 
 
 def _zoom_image(image, zoom_amt):
-   img_h, img_w = image.shape
+   if zoom_amt <= 0: return image
+   try:
+      img_h, img_w = image.shape
+   except:
+      img_h, img_w, _ = image.shape
    scaled = tf.resize(image, (img_h + zoom_amt*2, img_w + zoom_amt*2))
    return scaled[zoom_amt:-zoom_amt, zoom_amt:-zoom_amt]
 
@@ -70,7 +145,6 @@ def translate_images(images, trans, processes = 8):
    return images
 
 
-
 def shear_images(images, deg_angle, processes = 8):
    proc_pool = Pool(processes = processes)
    
@@ -89,6 +163,7 @@ def shear_images(images, deg_angle, processes = 8):
    proc_pool.close()
    proc_pool.join()
    return images
+
 
 def _warp_image(image, affine, mode = 'edge'):
    return tf.warp(image, affine, mode = mode)

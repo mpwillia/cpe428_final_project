@@ -1,24 +1,48 @@
 
 import numpy as np
 
+from skimage import filters
+from skimage.morphology import disk
+from skimage import transform as tf
 from skimage.external.tifffile import imshow
 from matplotlib import pyplot
 
 
-def segment_letters(image):
+def segment_letters(image, final_size = (64,64)):
     
-    norm_image = normalize_image_values(image)
-    thresh_image = norm_image < 0.5
+    # normalize the image
+    filt_image = normalize_image_values(image)
+
+    #imshow(image)
+    blurred_image = filters.gaussian(filt_image, sigma = 3.0)
+    filter_blurred_image = filters.gaussian(filt_image, sigma = 1.5)
+    alpha = 0.5
     
-    crop_bounds = get_crop_bounds(thresh_image, padding = 10)
+    filt_image = blurred_image + alpha * (blurred_image - filter_blurred_image)
+    norm_image = normalize_image_values(filt_image)
+    #imshow(norm_image)
+
+    
+    thresh = np.mean(norm_image.flatten()) * 0.75
+    
+    #print("Threshold : {:f}".format(thresh))
+    #thresh = 0.5
+    thresh_image = norm_image < thresh
+    
+    #imshow(thresh_image)
+    #pyplot.show()
+
+    crop_bounds = get_crop_bounds(thresh_image, padding = 16)
     cropped_img = crop_image(norm_image, *crop_bounds)
     
     # now that we're just looking at the image content, lets segment
-    thresh_image = cropped_img < 0.5
+    thresh_image = cropped_img < thresh
     col_chunks = find_col_chunks(thresh_image)
 
     img_chunks = crop_col_chunks(cropped_img, col_chunks)
     img_chunks = [make_image_square(img) for img in img_chunks]
+    img_chunks = [tf.resize(img, final_size) for img in img_chunks] 
+    img_chunks = [img > thresh for img in img_chunks] 
 
     return img_chunks
 
@@ -36,7 +60,7 @@ def make_image_square(image):
     pad_hr = pad_h - pad_hl
 
     #return np.pad(image, ((pad_hl, pad_hr), (pad_wl, pad_wr)), 'constant', constant_values = 1.0) 
-    return np.pad(image, ((pad_hl, pad_hr), (pad_wl, pad_wr)), 'edge') 
+    return np.pad(image, ((pad_hl, pad_hr), (pad_wl, pad_wr)), 'maximum') 
     
 def crop_col_chunks(image, col_chunks):
     img_chunks = []
@@ -46,7 +70,7 @@ def crop_col_chunks(image, col_chunks):
     
     return img_chunks
 
-def find_col_chunks(image, gap_tolerance = 5, chunk_padding = 5):
+def find_col_chunks(image, gap_tolerance = 4, chunk_padding = 8):
     col_means = np.mean(image, axis = 0)
     nonzero_indices = np.asarray(col_means.nonzero()).flatten()
     img_h, img_w = image.shape

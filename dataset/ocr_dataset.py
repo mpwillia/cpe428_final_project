@@ -36,8 +36,9 @@ def get_label_map():
         label_map[label] = char
         char_map[char] = label
     
-    label_map[0] = None
-    char_map[None] = 0
+    null_char = '_'
+    label_map[0] = null_char
+    char_map[null_char] = 0
 
     return label_map, char_map
 
@@ -93,14 +94,21 @@ class OCRDataset(object):
         #images = image_util.load_images(image_paths, as_grey = True, processes = 16)
          
         self.labeled_images = list(zip(*dataset))
-        exp_data = self.expand_dataset(self.labeled_images, rotations = [-10,10,-30,30], shears = [-10,10,-30,30])
+        exp_data = self.expand_dataset(self.labeled_images, 
+                                       rotations = [-15,15], 
+                                       shears = [-15,15], 
+                                       translates = [(-10,-10), (-10,10), (10,-10), (10,10)], 
+                                       zooms = [10])
         self.labeled_images.extend(exp_data)
 
         print("After Expansion: {:d} Images".format(len(self.labeled_images)))
 
+        #exp_data = self.expand_dataset(self.labeled_images, rotations = [-15,15], shears = [-15,15], translates = [(-10,-10), (-10,10), (10,-10), (10,10)], zooms = [10])
+        #self.labeled_images.extend(exp_data)
+        #print("After Expansion: {:d} Images".format(len(self.labeled_images)))
+
         noise_images = self.add_noise(self.labeled_images)
         self.labeled_images.extend(noise_images)
-        
         print("After Adding Noise Variants: {:d} Images".format(len(self.labeled_images)))
         
         null_samples = self.create_null_samples(500)
@@ -175,7 +183,7 @@ class OCRDataset(object):
         noise_null_samples = []
         def add(*args, **kwargs):
             noise_images = image_util.noise_images(null_samples, *args, **kwargs) 
-            imshow(noise_images[5])
+            #imshow(noise_images[5])
             noise_null_samples.extend(list(zip(noise_images, labels)))
 
 
@@ -183,13 +191,13 @@ class OCRDataset(object):
         add('speckle')
         add('s&p', salt_vs_pepper = 0.5, amount = 0.01)
         add('gaussian', var = 0.05)
-        add('speckle', var = 0.05)
+        #add('speckle', var = 0.05)
         add('speckle', var = 0.10)
-        add('s&p', salt_vs_pepper = 0.5, amount = 0.05)
+        #add('s&p', salt_vs_pepper = 0.5, amount = 0.05)
         add('s&p', salt_vs_pepper = 0.5, amount = 0.25)
         add('s&p', salt_vs_pepper = 0.5, amount = 0.5)
 
-        pyplot.show()
+        #pyplot.show()
         null_samples = list(zip(null_samples, labels))
         return null_samples + noise_null_samples
 
@@ -204,9 +212,9 @@ class OCRDataset(object):
         
         print("Creating noise images...")
         add('gaussian')
-        add('poisson')
+        #add('poisson')
         add('speckle')
-        add('s&p', salt_vs_pepper = 0.25, amount = 0.01)
+        #add('s&p', salt_vs_pepper = 0.25, amount = 0.01)
         
         return all_noise_images
         #noise_images_a = image_util.noise_images(images, 'gaussian')
@@ -214,7 +222,11 @@ class OCRDataset(object):
         #imshow(all_noise_images[0][0])
         #pyplot.show()
 
-    def expand_dataset(self, dataset, rotations = [], shears = []):
+    def expand_dataset(self, dataset, 
+                       rotations = [], 
+                       shears = [], 
+                       translates = [],
+                       zooms = []):
         
         #imshow(dataset[0][0])
         images, labels = zip(*dataset)
@@ -231,6 +243,20 @@ class OCRDataset(object):
             shear_images = image_util.shear_images(images, shear)
             #imshow(shear_images[0])
             sheared.extend(list(zip(shear_images, labels)))
+        
+        print("Translating images...") 
+        translated = []
+        for trans in translates:
+            trans_images = image_util.translate_images(images, trans)
+            #imshow(trans_images[0])
+            translated.extend(list(zip(trans_images, labels)))
+
+        print("Zooming images...") 
+        zoomed = []
+        for zoom_amt in zooms:
+            zoom_images = image_util.zoom_images(images, zoom_amt)
+            #imshow(zoom_images[0])
+            zoomed.extend(list(zip(zoom_images, labels)))
 
         #self.labeled_images.extend(rotated)
         #self.labeled_images.extend(sheared)
@@ -242,5 +268,5 @@ class OCRDataset(object):
     
         #pyplot.show()
 
-        return rotated + sheared;
+        return rotated + sheared + translated + zoomed;
 
