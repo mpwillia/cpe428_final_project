@@ -10,7 +10,7 @@ The neural network implementation was done using [Tensorflow](https://www.tensor
 We made major additions to the [Tensorflow wrapper](https://github.com/mpwillia/Tensorflow-Network-Experiments) for the purposes of this project.
 This includes adding the ability to randomly expand the dataset between each training iteration.
 
-To save the neural network to a file for later use we have to use the improved pickling library [dill] (https://pypi.python.org/pypi/dill) to do so. Standard python pickling is unable to pickle certain tensorflow variables while [dill] (https://pypi.python.org/pypi/dill) can do so.
+To save the neural network to a file for later use we have to use the improved pickling library [dill](https://pypi.python.org/pypi/dill) to do so. Standard python pickling is unable to pickle certain tensorflow variables while [dill](https://pypi.python.org/pypi/dill) can do so.
 
 ## Word Recognition
 
