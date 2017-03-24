@@ -139,6 +139,7 @@ class Network(object):
         #unwrapped_layers = state['layers']
         #wrapped_layers = [partial(func, *args, **kwargs) for func, args, kwargs in unwrapped_layers]
         #state['layers'] = wrapped_layers
+        state['logdir'] = None
 
         self.__init__(**state)
 

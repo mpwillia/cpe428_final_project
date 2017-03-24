@@ -36,7 +36,7 @@ def get_label_map():
         label_map[label] = char
         char_map[char] = label
     
-    null_char = '_'
+    null_char = ' '
     label_map[0] = null_char
     char_map[null_char] = 0
 

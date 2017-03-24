@@ -24,8 +24,8 @@ import os
 import numpy as np
 import cv2
 
-LOG_DIR="/media/mike/Main Storage/tensorflow-logs/ocr_test_logdir"
-#LOG_DIR=None
+#LOG_DIR="/media/mike/Main Storage/tensorflow-logs/ocr_test_logdir"
+LOG_DIR=None
 
 def main():
     print("CPE 428 Final Project")
@@ -48,12 +48,14 @@ def main():
         net = load_network()
         fit_net(data, net)
         network_fileio.save(net, network_name)
-    elif task == 1:
+    elif task == 1 or task == 2:
         print("Loading Trained Network")
         net = network_fileio.load(network_name)
-        run_tests(net)
-    else:
-        live_ocr()
+
+        if task == 1:
+            run_tests(net)
+        else:
+            live_ocr(net)
 
 
 def fit_net(data, net):
@@ -117,13 +119,16 @@ def run_tests(net):
     
     test_imgs_dir = "./test_images"
     test_imgs = [
-                 ("ocr_test_img1.png", "Abc2"),
-                 ("ocr_test_red_boat.png", "Boat"),
-                 ("ocr_test_thin_car.png", "Car"),
-                 ("ocr_test_thick_car.png", "Car"),
-                 ("ocr_test_font_computer_vision.png", "COMPUTERxVISION"),
-                 ("ocr_test_noise.png", "Noise"),
-                 ("ocr_test_noise_thick.png", "Noise"),
+                 #("ocr_test_img1.png", "Abc2"),
+                 #("ocr_test_red_boat.png", "Boat"),
+                 #("ocr_test_thin_car.png", "Car"),
+                 #("ocr_test_thick_car.png", "Car"),
+                 #("ocr_test_font_computer_vision.png", "COMPUTERxVISION"),
+                 #("ocr_test_noise.png", "Noise"),
+                 #("ocr_test_noise_thick.png", "Noise"),
+                 #("ocr_test_edge_blobs.png", "Blob"),
+                 #("ocr_test_edge_blobs_gray.png", "Blob"),
+                 ("ocr_test_i_samples.png", "iiii"),
                  ]
 
     #test_imgs = [
@@ -137,9 +142,10 @@ def run_tests(net):
     for test_img_name, exp in test_imgs:
         test_img_path = os.path.join(test_imgs_dir, test_img_name)
         test_img = load_image(test_img_path, as_grey = True, final_size = None)
+
         
         if len(test_imgs) < 2:
-            show_letters = True
+            show_letters = False
         else:
             show_letters = False
 
@@ -172,15 +178,19 @@ def levenshteinDistance(s1, s2):
     return distances[-1]
 
 
-def predict_word(image, net, give_num_letters = False, show_letters = False):
-    letter_imgs = ocr_util.segment_letters(image)
+def predict_word(image, net, give_num_letters = False, show_letters = False, show_filters = False):
+    letter_imgs = ocr_util.segment_letters(image, show_filters = show_filters, save_images = True)
+    
+    if len(letter_imgs) <= 0:
+        return None, 0
+
     letter_imgs = np.expand_dims(letter_imgs, axis = 3)
     
     if show_letters:
         for imgs in letter_imgs:    
             imshow(imgs)
         pyplot.show()
-        
+
     label_map, char_map = dataset.get_label_map()
     results = net.predict(np.asarray(letter_imgs), label_map = label_map)
 
@@ -191,26 +201,44 @@ def predict_word(image, net, give_num_letters = False, show_letters = False):
     else:
         return word
 
-def live_ocr():
+def live_ocr(net):
     cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,800);
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT,600);
+    
+    msg = "Num Letters: {:2d}    Word: {:9s}         \r"
+    show = False
 
+    os.system('clear')
+    print("")
     while True:
         # Get the frame and make it grayscale
         ret, frame = cap.read() 
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
         # Segment the letters and perform OCR 
-        letter_imgs = ocr_util.segment_letters(frame)
+        if show:
+            print("SHOWING LETTERS")
+
+        word, num_letters = predict_word(frame, net, True, show_letters = show, show_filters = show)
         
+        if word is None:
+            word = ""
+
         # Report the results
-        msg = "Found {:2d} Letters\r".format(len(letter_imgs))
-        sys.stdout.write(msg)
+        sys.stdout.write(msg.format(num_letters, word))
         sys.stdout.flush()
+        
+        if show: break
 
         # Display the resulting frame
         cv2.imshow('Camera',frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+        elif cv2.waitKey(1) & 0xFF == ord('s'):
+            show = True
+        else:
+            show = False
 
     cap.release()
     cv2.destroyAllWindows() 
